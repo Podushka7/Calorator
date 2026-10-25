@@ -29,28 +29,62 @@ public class SqliteDataAccess : IDataAccess
     public async Task<int> CreateUserAsync(User user, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(user);
+        ArgumentException.ThrowIfNullOrWhiteSpace(user.Login);
 
-        const string sql = @"
-            INSERT INTO Users (Login, PasswordHash, Name, Age, Gender, HeightCm, WeightKg, ActivityLevel, CreatedAt)
-            VALUES (@Login, @PasswordHash, @Name, @Age, @Gender, @HeightCm, @WeightKg, @ActivityLevel, @CreatedAt);
-            SELECT last_insert_rowid();
-        ";
-
-        long newId = await Database.ExecuteScalarAsync<long>(sql, new
+        return await Database.ExecuteInTransactionAsync(async transaction =>
         {
-            user.Login,
-            user.PasswordHash,
-            user.Name,
-            user.Age,
-            user.Gender,
-            user.HeightCm,
-            user.WeightKg,
-            user.ActivityLevel,
-            CreatedAt = user.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
-        }, null, ct);
+            const string sql = @"
+                INSERT INTO Users (Login, PasswordHash, Name, Age, Gender, HeightCm, WeightKg, ActivityLevel, CreatedAt)
+                VALUES (@Login, @PasswordHash, @Name, @Age, @Gender, @HeightCm, @WeightKg, @ActivityLevel, @CreatedAt);
+                SELECT last_insert_rowid();
+            ";
 
-        user.Id = (int)newId;
-        return user.Id;
+            long newId = await Database.ExecuteScalarAsync<long>(sql, new
+            {
+                Login = user.Login.Trim(),
+                user.PasswordHash,
+                Name = string.IsNullOrWhiteSpace(user.Name) ? user.Login.Trim() : user.Name.Trim(),
+                user.Age,
+                user.Gender,
+                user.HeightCm,
+                user.WeightKg,
+                user.ActivityLevel,
+                CreatedAt = user.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
+            }, transaction, ct);
+
+            user.Id = (int)newId;
+
+            if (user.CurrentGoal != null)
+            {
+                user.CurrentGoal.UserId = user.Id;
+                user.CurrentGoal.User = user;
+                if (user.CurrentGoal.CalorieAdjustment == 0 && user.CurrentGoal.Type != GoalType.Maintenance)
+                {
+                    user.CurrentGoal.CalorieAdjustment = Goal.GetDefaultCalorieAdjustment(user.CurrentGoal.Type);
+                }
+
+                await InsertGoalInternalAsync(user.CurrentGoal, transaction, ct);
+            }
+
+            if (user.CurrentNutritionNorm == null && user.Age > 0 && user.HeightCm > 0 && user.WeightKg > 0)
+            {
+                user.CalculateNutritionNorm();
+            }
+
+            if (user.CurrentNutritionNorm != null)
+            {
+                user.CurrentNutritionNorm.UserId = user.Id;
+                user.CurrentNutritionNorm.User = user;
+                if (user.CurrentNutritionNorm.Calories <= 0 && user.Age > 0 && user.HeightCm > 0 && user.WeightKg > 0)
+                {
+                    user.CurrentNutritionNorm.Recalculate(user, user.CurrentGoal);
+                }
+
+                await InsertNutritionNormInternalAsync(user.CurrentNutritionNorm, transaction, ct);
+            }
+
+            return user.Id;
+        }, ct);
     }
 
     public async Task<User?> GetUserByIdAsync(int id, CancellationToken ct = default)
@@ -64,8 +98,7 @@ public class SqliteDataAccess : IDataAccess
         var user = await Database.ExecuteSingleAsync(sql, MapUser, new { Id = id }, null, ct);
         if (user != null)
         {
-            user.CurrentGoal = await GetCurrentGoalByUserIdAsync(user.Id, ct);
-            user.CurrentNutritionNorm = await GetLatestNutritionNormByUserIdAsync(user.Id, ct);
+            await PopulateUserNavigationPropertiesAsync(user, ct);
         }
         return user;
     }
@@ -83,39 +116,72 @@ public class SqliteDataAccess : IDataAccess
         var user = await Database.ExecuteSingleAsync(sql, MapUser, new { Login = login.Trim() }, null, ct);
         if (user != null)
         {
-            user.CurrentGoal = await GetCurrentGoalByUserIdAsync(user.Id, ct);
-            user.CurrentNutritionNorm = await GetLatestNutritionNormByUserIdAsync(user.Id, ct);
+            await PopulateUserNavigationPropertiesAsync(user, ct);
         }
         return user;
+    }
+
+    private async Task PopulateUserNavigationPropertiesAsync(User user, CancellationToken ct)
+    {
+        user.CurrentGoal = await GetCurrentGoalByUserIdAsync(user.Id, ct);
+        if (user.CurrentGoal != null)
+        {
+            user.CurrentGoal.User = user;
+        }
+
+        user.CurrentNutritionNorm = await GetLatestNutritionNormByUserIdAsync(user.Id, ct);
+        if (user.CurrentNutritionNorm != null)
+        {
+            user.CurrentNutritionNorm.User = user;
+        }
+        else if (user.Age > 0 && user.HeightCm > 0 && user.WeightKg > 0)
+        {
+            user.CalculateNutritionNorm();
+        }
+
+        user.Recipes = (await GetRecipesByUserIdAsync(user.Id, true, ct)).ToList();
     }
 
     public async Task<bool> UpdateUserProfileAsync(User user, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(user);
 
-        const string sql = @"
-            UPDATE Users
-            SET Name = @Name,
-                Age = @Age,
-                Gender = @Gender,
-                HeightCm = @HeightCm,
-                WeightKg = @WeightKg,
-                ActivityLevel = @ActivityLevel
-            WHERE Id = @Id;
-        ";
-
-        int rows = await Database.ExecuteNonQueryAsync(sql, new
+        return await Database.ExecuteInTransactionAsync(async transaction =>
         {
-            user.Id,
-            user.Name,
-            user.Age,
-            user.Gender,
-            user.HeightCm,
-            user.WeightKg,
-            user.ActivityLevel
-        }, null, ct);
+            const string sql = @"
+                UPDATE Users
+                SET Name = @Name,
+                    Age = @Age,
+                    Gender = @Gender,
+                    HeightCm = @HeightCm,
+                    WeightKg = @WeightKg,
+                    ActivityLevel = @ActivityLevel
+                WHERE Id = @Id;
+            ";
 
-        return rows > 0;
+            int rows = await Database.ExecuteNonQueryAsync(sql, new
+            {
+                user.Id,
+                user.Name,
+                user.Age,
+                user.Gender,
+                user.HeightCm,
+                user.WeightKg,
+                user.ActivityLevel
+            }, transaction, ct);
+
+            if (rows > 0 && user.Age > 0 && user.HeightCm > 0 && user.WeightKg > 0)
+            {
+                user.CurrentGoal ??= await GetCurrentGoalInternalAsync(user.Id, transaction, ct);
+                user.CalculateNutritionNorm();
+                if (user.CurrentNutritionNorm != null)
+                {
+                    await InsertNutritionNormInternalAsync(user.CurrentNutritionNorm, transaction, ct);
+                }
+            }
+
+            return rows > 0;
+        }, ct);
     }
 
     public async Task<bool> UpdatePasswordAsync(int userId, string newPasswordHash, CancellationToken ct = default)
@@ -178,6 +244,16 @@ public class SqliteDataAccess : IDataAccess
     {
         ArgumentNullException.ThrowIfNull(norm);
 
+        if (norm.Calories <= 0 && norm.User != null)
+        {
+            norm.Recalculate();
+        }
+
+        return await InsertNutritionNormInternalAsync(norm, null, ct);
+    }
+
+    private async Task<int> InsertNutritionNormInternalAsync(NutritionNorm norm, SqliteTransaction? transaction, CancellationToken ct)
+    {
         const string sql = @"
             INSERT INTO NutritionNorms (UserId, Calories, Protein, Fat, Carbohydrates, CalculatedAt)
             VALUES (@UserId, @Calories, @Protein, @Fat, @Carbohydrates, @CalculatedAt);
@@ -192,7 +268,7 @@ public class SqliteDataAccess : IDataAccess
             norm.Fat,
             norm.Carbohydrates,
             CalculatedAt = norm.CalculatedAt.ToString("yyyy-MM-dd HH:mm:ss")
-        }, null, ct);
+        }, transaction, ct);
 
         norm.Id = (int)newId;
         return norm.Id;
@@ -245,6 +321,36 @@ public class SqliteDataAccess : IDataAccess
     {
         ArgumentNullException.ThrowIfNull(goal);
 
+        if (goal.CalorieAdjustment == 0 && goal.Type != GoalType.Maintenance)
+        {
+            goal.CalorieAdjustment = Goal.GetDefaultCalorieAdjustment(goal.Type);
+        }
+
+        return await Database.ExecuteInTransactionAsync(async transaction =>
+        {
+            int goalId = await InsertGoalInternalAsync(goal, transaction, ct);
+
+            const string selectUserSql = @"
+                SELECT Id, Login, PasswordHash, Name, Age, Gender, HeightCm, WeightKg, ActivityLevel, CreatedAt
+                FROM Users
+                WHERE Id = @Id;
+            ";
+
+            var user = await Database.ExecuteSingleAsync(selectUserSql, MapUser, new { Id = goal.UserId }, transaction, ct);
+            if (user != null && user.Age > 0 && user.HeightCm > 0 && user.WeightKg > 0)
+            {
+                goal.User = user;
+                user.CurrentGoal = goal;
+                var updatedNorm = user.CalculateNutritionNorm();
+                await InsertNutritionNormInternalAsync(updatedNorm, transaction, ct);
+            }
+
+            return goalId;
+        }, ct);
+    }
+
+    private async Task<int> InsertGoalInternalAsync(Goal goal, SqliteTransaction? transaction, CancellationToken ct)
+    {
         const string sql = @"
             INSERT INTO Goals (UserId, Type, TargetWeightKg, CalorieAdjustment, CreatedAt)
             VALUES (@UserId, @Type, @TargetWeightKg, @CalorieAdjustment, @CreatedAt);
@@ -258,13 +364,18 @@ public class SqliteDataAccess : IDataAccess
             goal.TargetWeightKg,
             goal.CalorieAdjustment,
             CreatedAt = goal.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
-        }, null, ct);
+        }, transaction, ct);
 
         goal.Id = (int)newId;
         return goal.Id;
     }
 
     public async Task<Goal?> GetCurrentGoalByUserIdAsync(int userId, CancellationToken ct = default)
+    {
+        return await GetCurrentGoalInternalAsync(userId, null, ct);
+    }
+
+    private async Task<Goal?> GetCurrentGoalInternalAsync(int userId, SqliteTransaction? transaction, CancellationToken ct)
     {
         const string sql = @"
             SELECT Id, UserId, Type, TargetWeightKg, CalorieAdjustment, CreatedAt
@@ -274,7 +385,7 @@ public class SqliteDataAccess : IDataAccess
             LIMIT 1;
         ";
 
-        return await Database.ExecuteSingleAsync(sql, MapGoal, new { UserId = userId }, null, ct);
+        return await Database.ExecuteSingleAsync(sql, MapGoal, new { UserId = userId }, transaction, ct);
     }
 
     public async Task<IReadOnlyList<Goal>> GetGoalHistoryByUserIdAsync(int userId, CancellationToken ct = default)
@@ -316,6 +427,22 @@ public class SqliteDataAccess : IDataAccess
     public async Task<int> AddProductAsync(Product product, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(product);
+        return await AddProductInternalAsync(product, null, ct);
+    }
+
+    private async Task<int> AddProductInternalAsync(Product product, SqliteTransaction? transaction, CancellationToken ct)
+    {
+        string? normalizedBarcode = string.IsNullOrWhiteSpace(product.Barcode) ? null : product.Barcode.Trim();
+
+        if (normalizedBarcode != null)
+        {
+            var existingByBarcode = await GetProductByBarcodeInternalAsync(normalizedBarcode, transaction, ct);
+            if (existingByBarcode != null)
+            {
+                product.Id = existingByBarcode.Id;
+                return product.Id;
+            }
+        }
 
         const string sql = @"
             INSERT INTO Products (Name, CaloriesPer100g, ProteinPer100g, FatPer100g, CarbohydratesPer100g, Barcode)
@@ -330,8 +457,8 @@ public class SqliteDataAccess : IDataAccess
             product.ProteinPer100g,
             product.FatPer100g,
             product.CarbohydratesPer100g,
-            Barcode = string.IsNullOrWhiteSpace(product.Barcode) ? null : product.Barcode.Trim()
-        }, null, ct);
+            Barcode = normalizedBarcode
+        }, transaction, ct);
 
         product.Id = (int)newId;
         return product.Id;
@@ -339,16 +466,26 @@ public class SqliteDataAccess : IDataAccess
 
     public async Task<Product?> GetProductByIdAsync(int id, CancellationToken ct = default)
     {
+        return await GetProductByIdInternalAsync(id, null, ct);
+    }
+
+    private async Task<Product?> GetProductByIdInternalAsync(int id, SqliteTransaction? transaction, CancellationToken ct)
+    {
         const string sql = @"
             SELECT Id, Name, CaloriesPer100g, ProteinPer100g, FatPer100g, CarbohydratesPer100g, Barcode
             FROM Products
             WHERE Id = @Id;
         ";
 
-        return await Database.ExecuteSingleAsync(sql, MapProduct, new { Id = id }, null, ct);
+        return await Database.ExecuteSingleAsync(sql, MapProduct, new { Id = id }, transaction, ct);
     }
 
     public async Task<Product?> GetProductByBarcodeAsync(string barcode, CancellationToken ct = default)
+    {
+        return await GetProductByBarcodeInternalAsync(barcode, null, ct);
+    }
+
+    private async Task<Product?> GetProductByBarcodeInternalAsync(string barcode, SqliteTransaction? transaction, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(barcode)) return null;
 
@@ -358,7 +495,7 @@ public class SqliteDataAccess : IDataAccess
             WHERE Barcode = @Barcode;
         ";
 
-        return await Database.ExecuteSingleAsync(sql, MapProduct, new { Barcode = barcode.Trim() }, null, ct);
+        return await Database.ExecuteSingleAsync(sql, MapProduct, new { Barcode = barcode.Trim() }, transaction, ct);
     }
 
     public async Task<IReadOnlyList<Product>> SearchProductsAsync(string query, int limit = 50, CancellationToken ct = default)
@@ -693,9 +830,24 @@ public class SqliteDataAccess : IDataAccess
 
     private async Task<int> AddMealItemInternalAsync(MealItem item, SqliteTransaction? transaction, CancellationToken ct)
     {
-        if (item.Product == null && (item.Calories == 0 && item.Protein == 0 && item.Fat == 0 && item.Carbohydrates == 0))
+        if (item.Product != null)
         {
-            item.Product = await GetProductByIdAsync(item.ProductId, ct);
+            if (item.Product.Id > 0 && item.ProductId == 0)
+            {
+                item.ProductId = item.Product.Id;
+            }
+            else if (item.ProductId == 0)
+            {
+                item.ProductId = await AddProductInternalAsync(item.Product, transaction, ct);
+            }
+        }
+        else if (item.ProductId > 0)
+        {
+            item.Product = await GetProductByIdInternalAsync(item.ProductId, transaction, ct);
+        }
+
+        if (item.Product != null && item.Calories == 0 && item.Protein == 0 && item.Fat == 0 && item.Carbohydrates == 0)
+        {
             item.CalculateNutrition();
         }
 
@@ -724,7 +876,7 @@ public class SqliteDataAccess : IDataAccess
     {
         ArgumentNullException.ThrowIfNull(item);
 
-        if (item.Product == null)
+        if (item.Product == null && item.ProductId > 0)
         {
             item.Product = await GetProductByIdAsync(item.ProductId, ct);
         }
@@ -913,7 +1065,7 @@ public class SqliteDataAccess : IDataAccess
             {
                 recipe.UserId,
                 recipe.Name,
-                recipe.Servings
+                Servings = Math.Max(1, recipe.Servings)
             }, transaction, ct);
 
             recipe.Id = (int)recipeId;
@@ -923,25 +1075,47 @@ public class SqliteDataAccess : IDataAccess
                 foreach (var ing in recipe.Ingredients)
                 {
                     ing.RecipeId = recipe.Id;
-                    const string insertIngSql = @"
-                        INSERT INTO RecipeIngredients (RecipeId, ProductId, AmountGrams)
-                        VALUES (@RecipeId, @ProductId, @AmountGrams);
-                        SELECT last_insert_rowid();
-                    ";
-
-                    long ingId = await Database.ExecuteScalarAsync<long>(insertIngSql, new
-                    {
-                        ing.RecipeId,
-                        ing.ProductId,
-                        ing.AmountGrams
-                    }, transaction, ct);
-
-                    ing.Id = (int)ingId;
+                    await InsertRecipeIngredientInternalAsync(ing, transaction, ct);
                 }
             }
 
             return recipe.Id;
         }, ct);
+    }
+
+    private async Task<int> InsertRecipeIngredientInternalAsync(RecipeIngredient ing, SqliteTransaction? transaction, CancellationToken ct)
+    {
+        if (ing.Product != null)
+        {
+            if (ing.Product.Id > 0 && ing.ProductId == 0)
+            {
+                ing.ProductId = ing.Product.Id;
+            }
+            else if (ing.ProductId == 0)
+            {
+                ing.ProductId = await AddProductInternalAsync(ing.Product, transaction, ct);
+            }
+        }
+        else if (ing.ProductId > 0)
+        {
+            ing.Product = await GetProductByIdInternalAsync(ing.ProductId, transaction, ct);
+        }
+
+        const string insertIngSql = @"
+            INSERT INTO RecipeIngredients (RecipeId, ProductId, AmountGrams)
+            VALUES (@RecipeId, @ProductId, @AmountGrams);
+            SELECT last_insert_rowid();
+        ";
+
+        long ingId = await Database.ExecuteScalarAsync<long>(insertIngSql, new
+        {
+            ing.RecipeId,
+            ing.ProductId,
+            ing.AmountGrams
+        }, transaction, ct);
+
+        ing.Id = (int)ingId;
+        return ing.Id;
     }
 
     public async Task<Recipe?> GetRecipeByIdAsync(int id, bool includeIngredients = true, CancellationToken ct = default)
@@ -984,21 +1158,36 @@ public class SqliteDataAccess : IDataAccess
     {
         ArgumentNullException.ThrowIfNull(recipe);
 
-        const string sql = @"
-            UPDATE Recipes
-            SET Name = @Name,
-                Servings = @Servings
-            WHERE Id = @Id;
-        ";
-
-        int rows = await Database.ExecuteNonQueryAsync(sql, new
+        return await Database.ExecuteInTransactionAsync(async transaction =>
         {
-            recipe.Id,
-            recipe.Name,
-            recipe.Servings
-        }, null, ct);
+            const string sql = @"
+                UPDATE Recipes
+                SET Name = @Name,
+                    Servings = @Servings
+                WHERE Id = @Id;
+            ";
 
-        return rows > 0;
+            int rows = await Database.ExecuteNonQueryAsync(sql, new
+            {
+                recipe.Id,
+                recipe.Name,
+                Servings = Math.Max(1, recipe.Servings)
+            }, transaction, ct);
+
+            if (rows > 0 && recipe.Ingredients.Count > 0)
+            {
+                const string deleteOldSql = "DELETE FROM RecipeIngredients WHERE RecipeId = @RecipeId;";
+                await Database.ExecuteNonQueryAsync(deleteOldSql, new { RecipeId = recipe.Id }, transaction, ct);
+
+                foreach (var ing in recipe.Ingredients)
+                {
+                    ing.RecipeId = recipe.Id;
+                    await InsertRecipeIngredientInternalAsync(ing, transaction, ct);
+                }
+            }
+
+            return rows > 0;
+        }, ct);
     }
 
     public async Task<bool> DeleteRecipeAsync(int recipeId, CancellationToken ct = default)
@@ -1011,22 +1200,7 @@ public class SqliteDataAccess : IDataAccess
     public async Task<int> AddRecipeIngredientAsync(RecipeIngredient ingredient, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(ingredient);
-
-        const string sql = @"
-            INSERT INTO RecipeIngredients (RecipeId, ProductId, AmountGrams)
-            VALUES (@RecipeId, @ProductId, @AmountGrams);
-            SELECT last_insert_rowid();
-        ";
-
-        long newId = await Database.ExecuteScalarAsync<long>(sql, new
-        {
-            ingredient.RecipeId,
-            ingredient.ProductId,
-            ingredient.AmountGrams
-        }, null, ct);
-
-        ingredient.Id = (int)newId;
-        return ingredient.Id;
+        return await InsertRecipeIngredientInternalAsync(ingredient, null, ct);
     }
 
     public async Task<bool> UpdateRecipeIngredientAmountAsync(int ingredientId, double amountGrams, CancellationToken ct = default)
@@ -1113,10 +1287,25 @@ public class SqliteDataAccess : IDataAccess
         DateTime endDate,
         CancellationToken ct = default)
     {
+        return await GetNutritionSummaryByMealTypesAsync(userId, startDate, endDate, null, ct);
+    }
+
+    public async Task<NutritionSummary> GetNutritionSummaryByMealTypesAsync(
+        int userId,
+        DateTime startDate,
+        DateTime endDate,
+        IEnumerable<MealType>? mealTypes = null,
+        CancellationToken ct = default)
+    {
         string startStr = startDate.ToString("yyyy-MM-dd");
         string endStr = endDate.ToString("yyyy-MM-dd");
 
-        const string nutritionSql = @"
+        var selectedTypes = mealTypes?.Distinct().Select(t => (int)t).ToArray();
+        string mealTypeFilter = selectedTypes is { Length: > 0 }
+            ? $" AND m.Type IN ({string.Join(", ", selectedTypes)})"
+            : string.Empty;
+
+        string nutritionSql = $@"
             SELECT 
                 IFNULL(SUM(mi.Calories), 0) AS TotalCal,
                 IFNULL(SUM(mi.Protein), 0) AS TotalProt,
@@ -1124,7 +1313,7 @@ public class SqliteDataAccess : IDataAccess
                 IFNULL(SUM(mi.Carbohydrates), 0) AS TotalCarb,
                 COUNT(DISTINCT d.Date) AS ActiveDaysCount
             FROM DailyLogs d
-            LEFT JOIN Meals m ON m.DailyLogId = d.Id
+            LEFT JOIN Meals m ON m.DailyLogId = d.Id{mealTypeFilter}
             LEFT JOIN MealItems mi ON mi.MealId = m.Id
             WHERE d.UserId = @UserId AND d.Date BETWEEN @StartDate AND @EndDate;
         ";

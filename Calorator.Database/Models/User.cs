@@ -75,24 +75,116 @@ public class User
     public List<DailyLog> DailyLogs { get; set; } = new();
 
     /// <summary>
-    /// Обновление параметров профиля (из диаграммы классов).
+    /// Актуализация профиля и пересчет суточной нормы КБЖУ (согласно диаграмме классов).
     /// </summary>
-    public void UpdateProfile(string name, int age, Gender gender, double heightCm, double weightKg, ActivityLevel activityLevel)
+    public void UpdateProfile()
     {
-        Name = name;
-        Age = age;
-        Gender = gender;
-        HeightCm = heightCm;
-        WeightKg = weightKg;
-        ActivityLevel = activityLevel;
+        CalculateNutritionNorm();
     }
 
     /// <summary>
-    /// Установка новой цели (из диаграммы классов).
+    /// Обновление параметров профиля с автоматическим пересчетом суточной нормы КБЖУ.
+    /// </summary>
+    public void UpdateProfile(string name, int age, Gender gender, double heightCm, double weightKg, ActivityLevel activityLevel)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            Name = name.Trim();
+        }
+
+        if (age > 0)
+        {
+            Age = age;
+        }
+
+        Gender = gender;
+
+        if (heightCm > 0)
+        {
+            HeightCm = heightCm;
+        }
+
+        if (weightKg > 0)
+        {
+            WeightKg = weightKg;
+        }
+
+        ActivityLevel = activityLevel;
+
+        CalculateNutritionNorm();
+    }
+
+    /// <summary>
+    /// Применение текущей цели пользователя и пересчет нормы КБЖУ (согласно диаграмме классов).
+    /// </summary>
+    public void SetGoal()
+    {
+        CurrentGoal ??= new Goal
+        {
+            UserId = Id,
+            User = this,
+            Type = GoalType.Maintenance,
+            TargetWeightKg = WeightKg,
+            CalorieAdjustment = 0,
+            CreatedAt = DateTime.Now
+        };
+
+        CurrentGoal.UserId = Id;
+        CurrentGoal.User = this;
+        CalculateNutritionNorm();
+    }
+
+    /// <summary>
+    /// Установка новой цели с автоматическим пересчетом суточной нормы КБЖУ.
     /// </summary>
     public void SetGoal(Goal goal)
     {
+        ArgumentNullException.ThrowIfNull(goal);
+        goal.UserId = Id;
+        goal.User = this;
+        if (goal.CalorieAdjustment == 0 && goal.Type != GoalType.Maintenance)
+        {
+            goal.CalorieAdjustment = Goal.GetDefaultCalorieAdjustment(goal.Type);
+        }
+
         CurrentGoal = goal;
+        CalculateNutritionNorm();
+    }
+
+    /// <summary>
+    /// Установка новой цели по параметрам с автоматическим пересчетом суточной нормы КБЖУ.
+    /// </summary>
+    public Goal SetGoal(GoalType type, double targetWeightKg, int? calorieAdjustment = null)
+    {
+        var goal = new Goal
+        {
+            UserId = Id,
+            User = this,
+            Type = type,
+            TargetWeightKg = targetWeightKg > 0 ? targetWeightKg : WeightKg,
+            CalorieAdjustment = calorieAdjustment ?? Goal.GetDefaultCalorieAdjustment(type),
+            CreatedAt = DateTime.Now
+        };
+
+        SetGoal(goal);
+        return goal;
+    }
+
+    /// <summary>
+    /// Рассчитывает и обновляет суточную норму КБЖУ пользователя по формуле Миффлина — Сан-Жеора с учетом цели.
+    /// </summary>
+    public NutritionNorm CalculateNutritionNorm()
+    {
+        CurrentNutritionNorm ??= new NutritionNorm
+        {
+            UserId = Id,
+            User = this
+        };
+
+        CurrentNutritionNorm.UserId = Id;
+        CurrentNutritionNorm.User = this;
+        CurrentNutritionNorm.Recalculate(this, CurrentGoal);
+        return CurrentNutritionNorm;
     }
 
     public override string ToString() => $"{Name} (@{Login}) - {WeightKg} кг, {HeightCm} см";

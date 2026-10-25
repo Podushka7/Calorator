@@ -30,21 +30,86 @@ public class Meal
     public List<MealItem> Items { get; set; } = new();
 
     /// <summary>
-    /// Добавление продукта в прием пищи (согласно диаграмме классов).
+    /// Добавление пустого элемента в прием пищи (согласно диаграмме классов).
+    /// </summary>
+    public void AddItem()
+    {
+        AddItem(new MealItem { MealId = Id });
+    }
+
+    /// <summary>
+    /// Добавление продукта в прием пищи с автоматическим расчетом КБЖУ порции.
     /// </summary>
     public void AddItem(MealItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
         item.MealId = Id;
+
+        if (item.Product != null)
+        {
+            if (item.ProductId == 0 && item.Product.Id > 0)
+            {
+                item.ProductId = item.Product.Id;
+            }
+
+            if (item.AmountGrams > 0 && item.Calories == 0 && item.Protein == 0 && item.Fat == 0 && item.Carbohydrates == 0)
+            {
+                item.CalculateNutrition();
+            }
+        }
+
         Items.Add(item);
     }
 
     /// <summary>
-    /// Удаление продукта из приема пищи (согласно диаграмме классов).
+    /// Добавление продукта с указанной граммовкой в прием пищи.
+    /// </summary>
+    public MealItem AddItem(Product product, double amountGrams)
+    {
+        ArgumentNullException.ThrowIfNull(product);
+
+        var item = new MealItem
+        {
+            MealId = Id,
+            ProductId = product.Id,
+            Product = product,
+            AmountGrams = amountGrams
+        };
+        item.CalculateNutrition(product);
+        Items.Add(item);
+        return item;
+    }
+
+    /// <summary>
+    /// Удаление последнего добавленного продукта из приема пищи (согласно диаграмме классов).
+    /// </summary>
+    public void RemoveItem()
+    {
+        if (Items.Count > 0)
+        {
+            Items.RemoveAt(Items.Count - 1);
+        }
+    }
+
+    /// <summary>
+    /// Удаление продукта из приема пищи.
     /// </summary>
     public void RemoveItem(MealItem item)
     {
-        Items.Remove(item);
+        if (item == null) return;
+
+        if (!Items.Remove(item) && item.Id > 0)
+        {
+            Items.RemoveAll(i => i.Id == item.Id);
+        }
+    }
+
+    /// <summary>
+    /// Удаление продукта из приема пищи по идентификатору элемента.
+    /// </summary>
+    public bool RemoveItem(int mealItemId)
+    {
+        return Items.RemoveAll(i => i.Id == mealItemId) > 0;
     }
 
     /// <summary>

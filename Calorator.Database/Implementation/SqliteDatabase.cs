@@ -1,6 +1,7 @@
 using Calorator.Database.Contracts;
 using Microsoft.Data.Sqlite;
 using System.Collections;
+using System.Globalization;
 using System.Reflection;
 
 namespace Calorator.Database.Implementation;
@@ -235,9 +236,9 @@ public class SqliteDatabase : IDataBase
         {
             foreach (DictionaryEntry entry in dictionary)
             {
-                string key = entry.Key.ToString()!;
-                if (!key.StartsWith('@')) key = "@" + key;
-                cmd.Parameters.AddWithValue(key, entry.Value ?? DBNull.Value);
+                string rawName = entry.Key.ToString()!.TrimStart('@');
+                string paramName = "@" + rawName;
+                cmd.Parameters.AddWithValue(paramName, FormatParameterValue(rawName, entry.Value));
             }
             return;
         }
@@ -245,39 +246,40 @@ public class SqliteDatabase : IDataBase
         var properties = parameters.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
         foreach (var prop in properties)
         {
-            string paramName = "@" + prop.Name;
+            string rawName = prop.Name;
+            string paramName = "@" + rawName;
             object? val = prop.GetValue(parameters);
-
-            // Обработка специальных типов
-            if (val == null)
-            {
-                cmd.Parameters.AddWithValue(paramName, DBNull.Value);
-            }
-            else if (val is Enum enumVal)
-            {
-                cmd.Parameters.AddWithValue(paramName, Convert.ToInt32(enumVal));
-            }
-            else if (val is DateTime dtVal)
-            {
-                // Если передали время полночи (дата без времени) и свойство называется Date
-                if (prop.Name.Equals("Date", StringComparison.OrdinalIgnoreCase))
-                {
-                    cmd.Parameters.AddWithValue(paramName, dtVal.ToString("yyyy-MM-dd"));
-                }
-                else
-                {
-                    cmd.Parameters.AddWithValue(paramName, dtVal.ToString("yyyy-MM-dd HH:mm:ss"));
-                }
-            }
-            else if (val is TimeSpan tsVal)
-            {
-                cmd.Parameters.AddWithValue(paramName, tsVal.ToString(@"hh\:mm\:ss"));
-            }
-            else
-            {
-                cmd.Parameters.AddWithValue(paramName, val);
-            }
+            cmd.Parameters.AddWithValue(paramName, FormatParameterValue(rawName, val));
         }
+    }
+
+    private static object FormatParameterValue(string propertyName, object? val)
+    {
+        if (val == null)
+        {
+            return DBNull.Value;
+        }
+
+        if (val is Enum enumVal)
+        {
+            return Convert.ToInt32(enumVal, CultureInfo.InvariantCulture);
+        }
+
+        if (val is DateTime dtVal)
+        {
+            if (propertyName.Equals("Date", StringComparison.OrdinalIgnoreCase))
+            {
+                return dtVal.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            }
+            return dtVal.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+
+        if (val is TimeSpan tsVal)
+        {
+            return tsVal.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+        }
+
+        return val;
     }
 
     private static T? ConvertValue<T>(object? value)
@@ -290,9 +292,35 @@ public class SqliteDatabase : IDataBase
 
         if (nonNullableType.IsEnum)
         {
-            return (T)Enum.ToObject(nonNullableType, Convert.ToInt32(value));
+            return (T)Enum.ToObject(nonNullableType, Convert.ToInt32(value, CultureInfo.InvariantCulture));
         }
 
-        return (T)Convert.ChangeType(value, nonNullableType);
+        if (nonNullableType == typeof(DateTime))
+        {
+            if (value is DateTime dt) return (T)(object)dt;
+            string str = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+            if (DateTime.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+            {
+                return (T)(object)parsed;
+            }
+            return DateTime.TryParse(str, out var fallback) ? (T)(object)fallback : default;
+        }
+
+        if (nonNullableType == typeof(TimeSpan))
+        {
+            if (value is TimeSpan ts) return (T)(object)ts;
+            string str = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+            return TimeSpan.TryParse(str, CultureInfo.InvariantCulture, out var parsedTs)
+                ? (T)(object)parsedTs
+                : default;
+        }
+
+        if (nonNullableType == typeof(bool))
+        {
+            if (value is bool b) return (T)(object)b;
+            return (T)(object)(Convert.ToInt32(value, CultureInfo.InvariantCulture) != 0);
+        }
+
+        return (T)Convert.ChangeType(value, nonNullableType, CultureInfo.InvariantCulture);
     }
 }

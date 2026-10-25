@@ -1,3 +1,4 @@
+using Calorator.Database.Enums;
 using Calorator.Database.Models;
 
 namespace Calorator.Database.Contracts;
@@ -230,7 +231,7 @@ public interface IDataAccess
     Task<IReadOnlyList<Recipe>> GetRecipesByUserIdAsync(int userId, bool includeIngredients = true, CancellationToken ct = default);
 
     /// <summary>
-    /// Обновляет данные рецепта (название, порции).
+    /// Обновляет данные рецепта (название, порции и состав ингредиентов).
     /// </summary>
     Task<bool> UpdateRecipeAsync(Recipe recipe, CancellationToken ct = default);
 
@@ -265,6 +266,11 @@ public interface IDataAccess
     /// Рассчитывает суммарное КБЖУ и потребление воды за выбранный период дат.
     /// </summary>
     Task<NutritionSummary> GetNutritionSummaryForPeriodAsync(int userId, DateTime startDate, DateTime endDate, CancellationToken ct = default);
+
+    /// <summary>
+    /// Рассчитывает суммарное КБЖУ за выбранный период дат и/или выбранные типы приемов пищи.
+    /// </summary>
+    Task<NutritionSummary> GetNutritionSummaryByMealTypesAsync(int userId, DateTime startDate, DateTime endDate, IEnumerable<MealType>? mealTypes = null, CancellationToken ct = default);
 
     /// <summary>
     /// Рассчитывает суммарное КБЖУ для конкретного приема пищи.

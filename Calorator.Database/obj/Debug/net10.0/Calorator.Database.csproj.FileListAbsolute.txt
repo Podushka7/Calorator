@@ -1,0 +1,13 @@
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\bin\Debug\net10.0\Calorator.Database.deps.json
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\bin\Debug\net10.0\Calorator.Database.dll
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\bin\Debug\net10.0\Calorator.Database.pdb
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\obj\Debug\net10.0\Calorator.Database.csproj.AssemblyReference.cache
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\obj\Debug\net10.0\Calorator.Database.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\obj\Debug\net10.0\Calorator.Database.AssemblyInfoInputs.cache
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\obj\Debug\net10.0\Calorator.Database.AssemblyInfo.cs
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\obj\Debug\net10.0\Calorator.Database.csproj.CoreCompileInputs.cache
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\obj\Debug\net10.0\Calorator.Database.sourcelink.json
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\obj\Debug\net10.0\Calorator.Database.dll
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\obj\Debug\net10.0\refint\Calorator.Database.dll
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\obj\Debug\net10.0\Calorator.Database.pdb
+C:\Users\catg1\Desktop\pr\Calorator\Calorator.Database\obj\Debug\net10.0\ref\Calorator.Database.dll

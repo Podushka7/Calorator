@@ -28,27 +28,109 @@ public class Recipe
     public List<RecipeIngredient> Ingredients { get; set; } = new();
 
     /// <summary>
-    /// Добавление ингредиента в рецепт (согласно диаграмме классов).
+    /// Добавление пустого ингредиента в рецепт (согласно диаграмме классов).
+    /// </summary>
+    public void AddIngredient()
+    {
+        AddIngredient(new RecipeIngredient { RecipeId = Id, AmountGrams = 100.0 });
+    }
+
+    /// <summary>
+    /// Добавление ингредиента в рецепт с синхронизацией связей между сущностями.
     /// </summary>
     public void AddIngredient(RecipeIngredient ingredient)
     {
         ArgumentNullException.ThrowIfNull(ingredient);
         ingredient.RecipeId = Id;
+        if (ingredient.Product != null && ingredient.ProductId == 0 && ingredient.Product.Id > 0)
+        {
+            ingredient.ProductId = ingredient.Product.Id;
+        }
+
         Ingredients.Add(ingredient);
     }
 
     /// <summary>
-    /// Удаление ингредиента из рецепта (согласно диаграмме классов).
+    /// Добавление продукта в рецепт с указанием массы в граммах.
+    /// </summary>
+    public RecipeIngredient AddIngredient(Product product, double amountGrams = 100.0)
+    {
+        ArgumentNullException.ThrowIfNull(product);
+
+        var existing = product.Id > 0
+            ? Ingredients.FirstOrDefault(i => i.ProductId == product.Id)
+            : Ingredients.FirstOrDefault(i => ReferenceEquals(i.Product, product));
+
+        if (existing != null)
+        {
+            existing.Product ??= product;
+            existing.AmountGrams = Math.Round(existing.AmountGrams + amountGrams, 2);
+            return existing;
+        }
+
+        var ingredient = new RecipeIngredient
+        {
+            RecipeId = Id,
+            ProductId = product.Id,
+            Product = product,
+            AmountGrams = amountGrams
+        };
+
+        Ingredients.Add(ingredient);
+        return ingredient;
+    }
+
+    /// <summary>
+    /// Удаление последнего добавленного ингредиента из рецепта (согласно диаграмме классов).
+    /// </summary>
+    public void RemoveIngredient()
+    {
+        if (Ingredients.Count > 0)
+        {
+            Ingredients.RemoveAt(Ingredients.Count - 1);
+        }
+    }
+
+    /// <summary>
+    /// Удаление ингредиента из рецепта.
     /// </summary>
     public void RemoveIngredient(RecipeIngredient ingredient)
     {
-        Ingredients.Remove(ingredient);
+        if (ingredient == null) return;
+        if (!Ingredients.Remove(ingredient) && ingredient.Id > 0)
+        {
+            Ingredients.RemoveAll(i => i.Id == ingredient.Id);
+        }
+    }
+
+    /// <summary>
+    /// Удаление ингредиента из рецепта по продукту.
+    /// </summary>
+    public void RemoveIngredient(Product product)
+    {
+        if (product == null) return;
+        Ingredients.RemoveAll(i =>
+            ReferenceEquals(i.Product, product) ||
+            (product.Id > 0 && i.ProductId == product.Id));
+    }
+
+    /// <summary>
+    /// Удаление ингредиента из рецепта по идентификатору ингредиента или продукта.
+    /// </summary>
+    public bool RemoveIngredient(int ingredientOrProductId)
+    {
+        int removed = Ingredients.RemoveAll(i => i.Id == ingredientOrProductId);
+        if (removed == 0)
+        {
+            removed = Ingredients.RemoveAll(i => i.ProductId == ingredientOrProductId);
+        }
+        return removed > 0;
     }
 
     /// <summary>
     /// Общая масса рецепта (г).
     /// </summary>
-    public double TotalWeightGrams => Ingredients.Sum(i => i.AmountGrams);
+    public double TotalWeightGrams => Math.Round(Ingredients.Sum(i => i.AmountGrams), 2);
 
     /// <summary>
     /// Расчет пищевой ценности на 1 порцию рецепта (согласно диаграмме классов).

@@ -28,6 +28,65 @@ public class DailyLog
     public List<WaterIntake> WaterIntakes { get; set; } = new();
 
     /// <summary>
+    /// Добавляет прием пищи в дневник дня с привязкой идентификатора дневника.
+    /// </summary>
+    public void AddMeal(Meal meal)
+    {
+        ArgumentNullException.ThrowIfNull(meal);
+        meal.DailyLogId = Id;
+        Meals.Add(meal);
+    }
+
+    /// <summary>
+    /// Удаляет прием пищи из дневника дня.
+    /// </summary>
+    public void RemoveMeal(Meal meal)
+    {
+        if (meal == null) return;
+        if (!Meals.Remove(meal) && meal.Id > 0)
+        {
+            Meals.RemoveAll(m => m.Id == meal.Id);
+        }
+    }
+
+    /// <summary>
+    /// Добавляет запись о выпитой воде в дневник дня.
+    /// </summary>
+    public void AddWaterIntake(WaterIntake waterIntake)
+    {
+        ArgumentNullException.ThrowIfNull(waterIntake);
+        waterIntake.DailyLogId = Id;
+        WaterIntakes.Add(waterIntake);
+    }
+
+    /// <summary>
+    /// Добавляет запись о выпитой воде по объему (в мл) и времени.
+    /// </summary>
+    public WaterIntake AddWaterIntake(int amountMl, TimeSpan? time = null)
+    {
+        var intake = new WaterIntake
+        {
+            DailyLogId = Id,
+            AmountMl = amountMl,
+            Time = time ?? DateTime.Now.TimeOfDay
+        };
+        WaterIntakes.Add(intake);
+        return intake;
+    }
+
+    /// <summary>
+    /// Удаляет запись о выпитой воде из дневника дня.
+    /// </summary>
+    public void RemoveWaterIntake(WaterIntake waterIntake)
+    {
+        if (waterIntake == null) return;
+        if (!WaterIntakes.Remove(waterIntake) && waterIntake.Id > 0)
+        {
+            WaterIntakes.RemoveAll(w => w.Id == waterIntake.Id);
+        }
+    }
+
+    /// <summary>
     /// Суммарные калории за день (согласно диаграмме классов).
     /// </summary>
     public double GetTotalCalories() => Math.Round(Meals.Sum(m => m.GetCalories()), 2);

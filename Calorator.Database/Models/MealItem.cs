@@ -53,8 +53,24 @@ public class MealItem
     public void CalculateNutrition(Product? product = null)
     {
         var targetProduct = product ?? Product;
+        if (targetProduct != null)
+        {
+            Product = targetProduct;
+            if (targetProduct.Id > 0)
+            {
+                ProductId = targetProduct.Id;
+            }
+        }
+
         if (targetProduct == null || AmountGrams <= 0)
         {
+            if (AmountGrams <= 0)
+            {
+                Calories = 0;
+                Protein = 0;
+                Fat = 0;
+                Carbohydrates = 0;
+            }
             return;
         }
 

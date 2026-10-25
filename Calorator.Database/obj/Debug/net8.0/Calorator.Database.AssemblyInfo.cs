@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Calorator.Database")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+033b34d7833f876e2bc11f7c91214ee4d9115336")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+9123bf3eda6d98ef0796d9bbbd6f824a55d63de0")]
 [assembly: System.Reflection.AssemblyProductAttribute("Calorator.Database")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Calorator.Database")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

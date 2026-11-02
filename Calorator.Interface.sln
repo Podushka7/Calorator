@@ -1,8 +1,13 @@
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Calorator.Interface", "Calorator.Interface\Calorator.Interface.csproj", "{6C57047E-F40B-428D-8BAB-CBD9840DAD0B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Calorator.Core", "Calorator.Core\Calorator.Core.csproj", "{1419EF61-76F3-44B2-BA9F-C52A48755F0B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Calorator.Tests", "Calorator.Tests\Calorator.Tests.csproj", "{A0BD0AAB-D5A7-4A69-9256-882711370123}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,5 +19,16 @@ Global
 		{6C57047E-F40B-428D-8BAB-CBD9840DAD0B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6C57047E-F40B-428D-8BAB-CBD9840DAD0B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6C57047E-F40B-428D-8BAB-CBD9840DAD0B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1419EF61-76F3-44B2-BA9F-C52A48755F0B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1419EF61-76F3-44B2-BA9F-C52A48755F0B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1419EF61-76F3-44B2-BA9F-C52A48755F0B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1419EF61-76F3-44B2-BA9F-C52A48755F0B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A0BD0AAB-D5A7-4A69-9256-882711370123}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A0BD0AAB-D5A7-4A69-9256-882711370123}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A0BD0AAB-D5A7-4A69-9256-882711370123}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A0BD0AAB-D5A7-4A69-9256-882711370123}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal
